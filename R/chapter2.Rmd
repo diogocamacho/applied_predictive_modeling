@@ -1,0 +1,217 @@
+---
+title: "Chapter 2"
+subtitle: "A short tour of the predictive modeling process"
+author: "Diogo M. Camacho"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(caret)
+library(GGally)
+
+data(FuelEconomy)
+```
+
+Chapter 2 introduces a simple example on model building. This is a simple model on one response (unadjusted highway MPG) for one predictor (engine displacement), given by $Y = f(x) + \epsilon$, where $Y$ is the response, $x$ is the predictor data, and $\epsilon$ is the error term associated with the prediction. 
+
+# 2.1 Predicting fuel economy
+## Linear model
+First, let's look at the data.
+```{r section2.1_data}
+all_cars <- dplyr::bind_rows(cars2010 %>% dplyr::mutate(., model_year = 2010), 
+                             cars2011 %>% dplyr::mutate(., model_year = 2011), 
+                             cars2012 %>% dplyr::mutate(., model_year = 2012))
+
+all_cars %>% 
+  ggplot() +
+  geom_point(aes(x = EngDispl, y = FE, color = as.factor(NumCyl))) + 
+  scale_color_viridis_d() +
+  labs(x = "Engine Displacement", y = "MPG (highway)") + 
+  facet_grid(. ~ model_year) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 18, color = "black"),
+        axis.text = element_text(size = 18, color = "black"),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 18, color = "black"))
+```
+
+We will be trying to predict the fuel economy of a new car based on the data that we are presented. For this case, we will treat the 2010 data as our training data, the 2011 data as our test data (we will also look at the 2012 data as a test data set.) In order to measure data performance, we will look at the RMSE (root mean squared error), which can be interpreted as to how far from 0 are the residuals of the model. Remember that the residuals are calculated as the difference between the observed value ($y$) and the predicted value ($\bar y$). Mathematically, the residuals are given as $r = y_{i} - \bar y_{i}$.
+
+If we were to use a linear regression model to define the relationship between fuel efficiency and engine displacement, our model would look like:
+
+```{r linreg}
+lin_model <- lm(formula = FE ~ EngDispl, data = cars2010)
+```
+
+which would just mean that we want the response (fuel economy, or `FE`) to be dependent on the engine displacement (`EngDispl`). Going back to the earlier function, this just means that what we are doing is:
+
+$Y = f(x) + \epsilon$
+
+or, using our variable names,
+
+$FE = f(EngDispl) + \epsilon$. Running the model above we can now look at the outcome of training the model:
+
+```{r linreg_summ}
+summary(lin_model)
+```
+
+So how well would we predict the fuel economy for a new set of cars (let's say, the ones in the `cars2011` data set)? This is easily done with the `predict` function:
+
+```{r predict_fe}
+pred_fe <- predict(object = lin_model, newdata = cars2011)
+
+difs <- tibble::tibble(obs = cars2011$FE,
+                       disp = cars2011$EngDispl,
+                       pred = pred_fe,
+                       res = obs - pred,
+                       rmse = sqrt(abs(res)))
+```
+
+We can now plot how well the model predicted the previously unseen values:
+
+```{r predction_plot}
+difs %>% 
+  ggplot() + 
+  geom_point(aes(x = obs, y = pred, color = disp)) + 
+  scale_color_viridis_c() +
+  geom_smooth(color = "red", aes(x = obs, y = pred), method = "lm") + 
+  labs(x = "Observed MPG values", y = "Predicted MPG values") +
+  xlim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  ylim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  theme_bw() + 
+  theme(axis.ticks.length.x = unit(0.1, "in"),
+        axis.ticks.length.y = unit(0.1, "in"),
+        axis.text = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 18))
+```
+
+As stated in the text, this particular modeling framework does not do a good job in predicting the fuel economy for engines with large (> 6) or small (< 2) displacements. 
+
+## Nonlinear model
+Just by looking at the previous figure we can make the judgement that a non-linear model will likely produce a more accurate estimate of fuel economy of a car given the engine displacement. This can be summarized as:
+
+$Y = f(x_1, x_2) + \epsilon$.
+
+For our case, let's build a quadratic model of the fuel economy response given the displacement as:
+
+$FE = EngDispl + EngDispl^2$
+
+which would translate as follows:
+
+```{r quad_model}
+a1 <- cars2010 %>% 
+  dplyr::mutate(., quad_disp = EngDispl^2)
+
+quad_model <- lm(data = a1, formula = FE ~ EngDispl + quad_disp)
+```
+
+We can now predict the fuel economies for the 2011 cars using this model:
+
+```{r pred_quad}
+a2 <- cars2011 %>% 
+  dplyr::mutate(., quad_disp = EngDispl^2)
+
+quad_pred <- predict(object = quad_model, newdata = a2)
+
+quad_difs <- tibble::tibble(obs = cars2011$FE,
+                       disp = cars2011$EngDispl,
+                       pred = quad_pred,
+                       res = obs - pred,
+                       rmse = sqrt(abs(res)))
+
+quad_difs %>% 
+  ggplot() + 
+  geom_point(aes(x = obs, y = pred, color = disp)) + 
+  scale_color_viridis_c() +
+  # geom_smooth(color = "red", aes(x = obs, y = pred), method = "lm") + 
+  labs(x = "Observed MPG values", y = "Predicted MPG values") +
+  xlim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  ylim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  theme_bw() + 
+  theme(axis.ticks.length.x = unit(0.1, "in"),
+        axis.ticks.length.y = unit(0.1, "in"),
+        axis.text = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 18))
+
+```
+
+
+# Using `caret`
+I will just write the same analyses as above but using the caret package:
+
+## Linear model
+```{r caret_lin}
+lin_mod_caret <- train(form = FE ~ EngDispl, 
+                       data = cars2010,
+                       method = "lm",
+                       trControl = trainControl(method = "cv", number = 5))
+
+lin_pred_caret <- predict(object = lin_mod_caret, 
+                          newdata = cars2011)
+
+lin_difs_caret <- tibble::tibble(obs = cars2011$FE,
+                       disp = cars2011$EngDispl,
+                       pred = lin_pred_caret,
+                       res = obs - pred,
+                       rmse = sqrt(abs(res)))
+
+lin_difs_caret %>% 
+  ggplot() + 
+  geom_point(aes(x = obs, y = pred, color = disp)) + 
+  scale_color_viridis_c() +
+  geom_smooth(color = "red", aes(x = obs, y = pred), method = "lm") + 
+  labs(x = "Observed MPG values", y = "Predicted MPG values") +
+  xlim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  ylim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  theme_bw() + 
+  theme(axis.ticks.length.x = unit(0.1, "in"),
+        axis.ticks.length.y = unit(0.1, "in"),
+        axis.text = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 18))
+
+```
+
+
+## Quadratic model
+```{r}
+a1 <- cars2010 %>% 
+  dplyr::mutate(., quad_disp = EngDispl^2)
+
+a2 <- cars2011 %>% 
+  dplyr::mutate(., quad_disp = EngDispl^2)
+
+# a2 <- cars2012 %>%
+#   dplyr::mutate(., quad_disp = EngDispl^2)
+
+
+quad_mod_caret <- train(form = FE ~ EngDispl + quad_disp, 
+                       data = a1,
+                       method = "lm",
+                       trControl = trainControl(method = "cv", number = 5))
+
+quad_pred_caret <- predict(object = quad_mod_caret, 
+                          newdata = a2)
+
+quad_difs_caret <- tibble::tibble(obs = a2$FE,
+                       disp = a2$EngDispl,
+                       pred = quad_pred_caret,
+                       res = obs - pred,
+                       rmse = sqrt(abs(res)))
+
+quad_difs_caret %>% 
+  ggplot() + 
+  geom_point(aes(x = obs, y = pred, color = disp)) + 
+  scale_color_viridis_c() +
+  # geom_smooth(color = "red", aes(x = obs, y = pred), method = "lm") + 
+  labs(x = "Observed MPG values", y = "Predicted MPG values") +
+  xlim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  ylim(min(difs$obs, difs$pred), max(difs$obs, difs$pred)) +
+  theme_bw() + 
+  theme(axis.ticks.length.x = unit(0.1, "in"),
+        axis.ticks.length.y = unit(0.1, "in"),
+        axis.text = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 18))
+```
+
